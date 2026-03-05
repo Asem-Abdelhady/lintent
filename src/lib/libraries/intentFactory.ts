@@ -5,9 +5,11 @@ import {
 	INPUT_SETTLER_COMPACT_LIFI,
 	INPUT_SETTLER_ESCROW_LIFI,
 	MULTICHAIN_INPUT_SETTLER_ESCROW,
+	solanaDevnetConnection,
 	type Token,
 	type WC
 } from "$lib/config";
+import solanaWallet from "$lib/utils/solana-wallet.svelte";
 import { maxUint256 } from "viem";
 import type {
 	MultichainOrder,
@@ -17,7 +19,7 @@ import type {
 	StandardOrder
 } from "../../types";
 import { ERC20_ABI } from "$lib/abi/erc20";
-import { Intent } from "$lib/libraries/intent";
+import { Intent, StandardOrderIntent } from "$lib/libraries/intent";
 import { OrderServer } from "$lib/libraries/orderServer";
 import type { CreateIntentOptions } from "$lib/libraries/intent";
 import { store, type TokenContext } from "$lib/state.svelte";
@@ -158,15 +160,25 @@ export class IntentFactory {
 			const inputChain = inputTokens[0].token.chain;
 			if (this.preHook) await this.preHook(inputChain);
 
-			// Execute the open.
-			const transactionHashes = await intent.openEscrow(account(), this.walletClient);
-			console.log({ tsh: transactionHashes });
+			let transactionHashes: string[];
 
-			// for (const hash of transactionHashes) {
-			// 	await clients[inputChain].waitForTransactionReceipt({
-			// 		hash: await hash
-			// 	});
-			// }
+			if (inputChain === "solanaDevnet") {
+				if (!solanaWallet.adapter || !solanaWallet.publicKey) {
+					throw new Error("Solana wallet not connected");
+				}
+				if (!(intent instanceof StandardOrderIntent)) {
+					throw new Error("Solana intents must be single-chain");
+				}
+				transactionHashes = await intent.openSolana(
+					solanaWallet.publicKey,
+					solanaWallet.adapter,
+					solanaDevnetConnection
+				);
+			} else {
+				transactionHashes = await intent.openEscrow(account(), this.walletClient);
+			}
+
+			console.log({ tsh: transactionHashes });
 
 			if (this.postHook) await this.postHook();
 
